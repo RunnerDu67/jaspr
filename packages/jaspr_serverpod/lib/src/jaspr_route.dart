@@ -63,7 +63,7 @@ abstract class JasprRoute extends sp.Route {
     try {
       final shelfResponse = await _handler(shelfRequest);
 
-      // 3. Convert Shelf response back to Serverpod/Relic response
+      // 3. Convert Shelf response back to Serverpod response
       final contentType = shelfResponse.headers['content-type'];
       sp.MimeType? mimeType;
       if (contentType != null) {
@@ -83,22 +83,35 @@ abstract class JasprRoute extends sp.Route {
         headers: sp.Headers.fromMap(shelfResponse.headersAll),
       );
     } catch (e) {
-      if (hijackResult != null) {
-        session.log(
-          'JasprRoute: Returning hijack result for ${request.url.path}',
-          level: sp.LogLevel.debug,
-        );
-        return hijackResult!;
+      // Check if this exception is Shelf's hijack control-flow mechanism
+      final isHijack =
+          e.runtimeType.toString() == 'HijackException' ||
+          e.toString().contains('hijacked');
+
+      if (isHijack) {
+        // Yield to the event loop for one microtask.
+        // This resolves the timing issue where the exception is caught
+        // before the onHijack closure has populated hijackResult.
+        await Future.microtask(() {});
+
+        if (hijackResult != null) {
+          session.log(
+            'JasprRoute: Successfully returning hijack result for ${request.url.path}',
+            level: sp.LogLevel.debug,
+          );
+          return hijackResult!;
+        } else {
+          // If it is STILL null, prevent the server from logging a fatal crash
+          // by swallowing the exception and returning an empty 500 response.
+          session.log(
+            'JasprRoute: Connection hijacked but result is null. Aborting gracefully.',
+            level: sp.LogLevel.warning,
+          );
+          return sp.Response(500, body: sp.Body.empty());
+        }
       }
 
-      // If we see the HijackException message but didn't capture the result.
-      if (e.toString().contains('hijacked')) {
-        session.log(
-          'JasprRoute: Detected HijackException but hijackResult was null!',
-          level: sp.LogLevel.error,
-        );
-      }
-
+      // If it's a genuine error (not a hijack), let Serverpod handle it.
       rethrow;
     }
   }
