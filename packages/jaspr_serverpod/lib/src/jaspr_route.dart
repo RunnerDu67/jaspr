@@ -1,56 +1,62 @@
 import 'dart:async';
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:jaspr/server.dart' as jp;
 import 'package:serverpod/serverpod.dart' as sp;
-import 'package:shelf/shelf_io.dart' as shelf_io;
 
 import '../jaspr_serverpod.dart';
 
 /// A [JasprRoute] is the most convenient way to render Jaspr components in your server.
-/// Override the [build] method and return a root [Component].
+/// Override the [build] method and return a root [jp.Component].
 ///
 /// {@category Setup}
 abstract class JasprRoute extends sp.Route {
+  late final jp.Handler _handler;
+
   JasprRoute() {
-    handler = jp.serveApp(_handleRenderCall);
+    _handler = jp.serveApp(_handleRenderCall);
   }
 
-  late jp.Handler handler;
+  /// Override this method to build your Jaspr component tree.
+  FutureOr<jp.Component> build(sp.Session session, sp.Request request);
 
-  /// Override this method to build your root [Component] from the current [session] and [request].
-  Future<jp.Component> build(sp.Session session, sp.Request request);
-
-  FutureOr<jp.Response> _handleRenderCall(
-    jp.Request request,
-    FutureOr<jp.Response> Function(jp.Component) render,
+  Future<jp.Response> _handleRenderCall(
+    jp.Request shelfRequest,
+    jp.RenderFunction render,
   ) async {
-    final session = request.context['session'] as sp.Session;
-    final spRequest = request.context['request'] as sp.Request;
-    final component = await build(session, spRequest);
-    return render(InheritedSession(session: session, child: component));
+    // Extract Session and Request from context
+    final session = shelfRequest.context['session'] as sp.Session;
+    final request = shelfRequest.context['request'] as sp.Request;
+
+    final component = await build(session, request);
+
+    return render(component);
   }
 
   @override
   Future<sp.Result> handleCall(sp.Session session, sp.Request request) async {
-    // Log helpful for debugging routing issues
-    session.log(
-      'JasprRoute handling: ${request.url.path}',
-      level: sp.LogLevel.debug,
+    // 1. Map Serverpod/Relic request to Shelf request
+    final shelfHeaders = <String, List<String>>{};
+    for (final entry in request.headers.entries) {
+      shelfHeaders[entry.key] = entry.value.toList();
+    }
+
+    final shelfRequest = jp.Request(
+      request.method.name,
+      request.url,
+      headers: shelfHeaders,
+      body: request.body.read(),
+      context: {'session': session, 'request': request},
     );
 
-    final ioRequest = request.token as HttpRequest;
-    await shelf_io.handleRequest(ioRequest, (req) {
-      return handler(
-        req.change(context: {'session': session, 'request': request}),
-      );
-    }, poweredByHeader: null);
+    // 2. Execute Jaspr/Shelf handler
+    final shelfResponse = await _handler(shelfRequest);
 
-    // Needed to flush hijacked requests before returning.
-    await Future(() {});
-
-    // We return an OK result. Since shelf_io already handled the response,
-    // this effectively tells Serverpod that the request was processed successfully.
-    return sp.Response.ok();
+    // 3. Convert Shelf response back to Serverpod/Relic response
+    return sp.Response(
+      shelfResponse.statusCode,
+      body: sp.Body.fromDataStream(shelfResponse.read().cast<Uint8List>()),
+      headers: sp.Headers.fromMap(shelfResponse.headersAll),
+    );
   }
 }
