@@ -39,35 +39,47 @@ abstract class JasprRoute extends sp.Route {
       shelfHeaders[entry.key] = entry.value.toList();
     }
 
+    sp.Hijack? hijackResult;
+
     final shelfRequest = jp.Request(
       request.method.value,
       request.url,
       headers: shelfHeaders,
       body: request.body.read(),
       context: {'session': session, 'request': request},
+      onHijack: (callback) {
+        hijackResult = sp.Hijack(callback);
+      },
     );
 
     // 2. Execute Jaspr/Shelf handler
-    final shelfResponse = await _handler(shelfRequest);
+    try {
+      final shelfResponse = await _handler(shelfRequest);
 
-    // 3. Convert Shelf response back to Serverpod/Relic response
-    final contentType = shelfResponse.headers['content-type'];
-    sp.MimeType? mimeType;
-    if (contentType != null) {
-      try {
-        mimeType = sp.MimeType.parse(contentType.split(';').first.trim());
-      } catch (_) {
-        // Fallback to default if parsing fails
+      // 3. Convert Shelf response back to Serverpod/Relic response
+      final contentType = shelfResponse.headers['content-type'];
+      sp.MimeType? mimeType;
+      if (contentType != null) {
+        try {
+          mimeType = sp.MimeType.parse(contentType.split(';').first.trim());
+        } catch (_) {
+          // Fallback to default if parsing fails
+        }
       }
-    }
 
-    return sp.Response(
-      shelfResponse.statusCode,
-      body: sp.Body.fromDataStream(
-        shelfResponse.read().cast<Uint8List>(),
-        mimeType: mimeType,
-      ),
-      headers: sp.Headers.fromMap(shelfResponse.headersAll),
-    );
+      return sp.Response(
+        shelfResponse.statusCode,
+        body: sp.Body.fromDataStream(
+          shelfResponse.read().cast<Uint8List>(),
+          mimeType: mimeType,
+        ),
+        headers: sp.Headers.fromMap(shelfResponse.headersAll),
+      );
+    } catch (e) {
+      if (hijackResult != null) {
+        return hijackResult!;
+      }
+      rethrow;
+    }
   }
 }
