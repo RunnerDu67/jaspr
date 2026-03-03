@@ -43,7 +43,8 @@ abstract class JasprRoute extends sp.Route {
     sp.Result? hijackResult;
 
     final shelfRequest = jp.Request(
-      request.method.value,
+      // FIX: Ensure the HTTP method is always uppercase for Shelf
+      request.method.value.toUpperCase(),
       request.url,
       headers: shelfHeaders,
       body: request.body.read(),
