@@ -13,7 +13,7 @@ import '../jaspr_serverpod.dart';
 /// {@category Setup}
 abstract class JasprRoute extends sp.Route {
   JasprRoute() {
-    handler = jp.serveApp(_handleRenderCall as jp.AppHandler);
+    handler = jp.serveApp(_handleRenderCall);
   }
 
   late jp.Handler handler;
@@ -21,12 +21,13 @@ abstract class JasprRoute extends sp.Route {
   /// Override this method to build your root [Component] from the current [session] and [request].
   Future<jp.Component> build(sp.Session session, sp.Request request);
 
-  Future<sp.Response> _handleRenderCall(
-    sp.Request request,
-    Future<sp.Response> Function(jp.Component) render,
+  FutureOr<jp.Response> _handleRenderCall(
+    jp.Request request,
+    FutureOr<jp.Response> Function(jp.Component) render,
   ) async {
-    final session = await request.session;
-    final component = await build(session, request);
+    final session = request.context['session'] as sp.Session;
+    final spRequest = request.context['request'] as sp.Request;
+    final component = await build(session, spRequest);
     return render(InheritedSession(session: session, child: component));
   }
 
@@ -35,7 +36,7 @@ abstract class JasprRoute extends sp.Route {
     final ioRequest = request.token as HttpRequest;
     await shelf_io.handleRequest(ioRequest, (req) {
       return handler(
-        req.change(context: {'session': session, 'request': ioRequest}),
+        req.change(context: {'session': session, 'request': request}),
       );
     }, poweredByHeader: null);
     // Needed to flush hijacked requests before returning.
