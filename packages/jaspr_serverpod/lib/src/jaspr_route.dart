@@ -5,6 +5,8 @@ import 'package:jaspr/server.dart' as jp;
 import 'package:serverpod/serverpod.dart' as sp;
 import 'package:stream_channel/stream_channel.dart';
 
+import 'inherited_session.dart';
+
 /// A [JasprRoute] is the most convenient way to render Jaspr components in your server.
 /// Override the [build] method and return a root [jp.Component].
 ///
@@ -29,7 +31,7 @@ abstract class JasprRoute extends sp.Route {
 
     final component = await build(session, request);
 
-    return render(component);
+    return render(InheritedSession(session: session, child: component));
   }
 
   @override
