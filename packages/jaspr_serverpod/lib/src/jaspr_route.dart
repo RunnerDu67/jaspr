@@ -33,14 +33,24 @@ abstract class JasprRoute extends sp.Route {
 
   @override
   Future<sp.Result> handleCall(sp.Session session, sp.Request request) async {
+    // Log helpful for debugging routing issues
+    session.log(
+      'JasprRoute handling: ${request.url.path}',
+      level: sp.LogLevel.debug,
+    );
+
     final ioRequest = request.token as HttpRequest;
     await shelf_io.handleRequest(ioRequest, (req) {
       return handler(
         req.change(context: {'session': session, 'request': request}),
       );
     }, poweredByHeader: null);
+
     // Needed to flush hijacked requests before returning.
     await Future(() {});
+
+    // We return an OK result. Since shelf_io already handled the response,
+    // this effectively tells Serverpod that the request was processed successfully.
     return sp.Response.ok();
   }
 }
