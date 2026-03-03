@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:jaspr/server.dart' as jp;
 import 'package:serverpod/serverpod.dart' as sp;
+import 'package:stream_channel/stream_channel.dart';
 
 /// A [JasprRoute] is the most convenient way to render Jaspr components in your server.
 /// Override the [build] method and return a root [jp.Component].
@@ -39,7 +40,7 @@ abstract class JasprRoute extends sp.Route {
       shelfHeaders[entry.key] = entry.value.toList();
     }
 
-    sp.Hijack? hijackResult;
+    sp.Result? hijackResult;
 
     final shelfRequest = jp.Request(
       request.method.value,
@@ -47,8 +48,14 @@ abstract class JasprRoute extends sp.Route {
       headers: shelfHeaders,
       body: request.body.read(),
       context: {'session': session, 'request': request},
-      onHijack: (callback) {
-        hijackResult = sp.Hijack(callback);
+      onHijack: (dynamic callback) {
+        session.log(
+          'JasprRoute: Captured hijack callback for ${request.url.path}',
+          level: sp.LogLevel.debug,
+        );
+        hijackResult = sp.Hijack(
+          callback as void Function(StreamChannel<List<int>>),
+        );
       },
     );
 
@@ -77,8 +84,21 @@ abstract class JasprRoute extends sp.Route {
       );
     } catch (e) {
       if (hijackResult != null) {
+        session.log(
+          'JasprRoute: Returning hijack result for ${request.url.path}',
+          level: sp.LogLevel.debug,
+        );
         return hijackResult!;
       }
+
+      // If we see the HijackException message but didn't capture the result.
+      if (e.toString().contains('hijacked')) {
+        session.log(
+          'JasprRoute: Detected HijackException but hijackResult was null!',
+          level: sp.LogLevel.error,
+        );
+      }
+
       rethrow;
     }
   }
