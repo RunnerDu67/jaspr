@@ -21,9 +21,9 @@ abstract class JasprRoute extends sp.Route {
   /// Override this method to build your root [Component] from the current [session] and [request].
   Future<jp.Component> build(sp.Session session, sp.Request request);
 
-  FutureOr<jp.Response> _handleRenderCall(
+  Future<jp.Response> _handleRenderCall(
     sp.Request request,
-    FutureOr<jp.Response> Function(jp.Component) render,
+    Future<jp.Response> Function(jp.Component) render,
   ) async {
     final session = await request.session;
     final component = await build(session, request);
