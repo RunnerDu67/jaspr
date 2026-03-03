@@ -4,8 +4,6 @@ import 'dart:typed_data';
 import 'package:jaspr/server.dart' as jp;
 import 'package:serverpod/serverpod.dart' as sp;
 
-import '../jaspr_serverpod.dart';
-
 /// A [JasprRoute] is the most convenient way to render Jaspr components in your server.
 /// Override the [build] method and return a root [jp.Component].
 ///
@@ -42,7 +40,7 @@ abstract class JasprRoute extends sp.Route {
     }
 
     final shelfRequest = jp.Request(
-      request.method.name,
+      request.method.value,
       request.url,
       headers: shelfHeaders,
       body: request.body.read(),
@@ -53,9 +51,22 @@ abstract class JasprRoute extends sp.Route {
     final shelfResponse = await _handler(shelfRequest);
 
     // 3. Convert Shelf response back to Serverpod/Relic response
+    final contentType = shelfResponse.headers['content-type'];
+    sp.MimeType? mimeType;
+    if (contentType != null) {
+      try {
+        mimeType = sp.MimeType.parse(contentType.split(';').first.trim());
+      } catch (_) {
+        // Fallback to default if parsing fails
+      }
+    }
+
     return sp.Response(
       shelfResponse.statusCode,
-      body: sp.Body.fromDataStream(shelfResponse.read().cast<Uint8List>()),
+      body: sp.Body.fromDataStream(
+        shelfResponse.read().cast<Uint8List>(),
+        mimeType: mimeType,
+      ),
       headers: sp.Headers.fromMap(shelfResponse.headersAll),
     );
   }
